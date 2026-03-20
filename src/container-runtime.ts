@@ -19,6 +19,9 @@ export const CONTAINER_HOST_GATEWAY = 'host.docker.internal';
  * Docker Desktop (macOS): 127.0.0.1 — the VM routes host.docker.internal to loopback.
  * Docker (Linux): bind to the docker0 bridge IP so only containers can reach it,
  *   falling back to 0.0.0.0 if the interface isn't found.
+ * NOTE: On hosts with UFW (common on Ubuntu VPS), you must allow container
+ *   traffic to this port: `ufw allow from 172.17.0.0/16 to any port 3001 proto tcp`
+ *   UFW's default deny-incoming policy blocks docker0 bridge traffic otherwise.
  */
 export const PROXY_BIND_HOST =
   process.env.CREDENTIAL_PROXY_HOST || detectProxyBindHost();

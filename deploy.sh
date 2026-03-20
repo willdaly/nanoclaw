@@ -14,7 +14,7 @@ ssh "$HOST" bash <<ENDSSH
 set -euo pipefail
 
 # ── Install deps if needed ───────────────────────────────────────────
-if ! command -v node &>/dev/null || [[ "\$(node -e 'process.exit(+process.version.slice(1).split(\".\")[0]<20)')" ]]; then
+if ! command -v node &>/dev/null || [ "\$(node -v | cut -d. -f1 | tr -d v)" -lt 20 ]; then
   echo "Installing Node 20..."
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   apt-get install -y nodejs
@@ -80,10 +80,12 @@ echo "Building agent container image (this takes ~2 min on first run)..."
 cd "$APP_DIR/container" && bash build.sh
 cd "$APP_DIR"
 
-# ── Open firewall port 3000 ──────────────────────────────────────────
+# ── Open firewall ports ───────────────────────────────────────────────
 if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow 3000/tcp >/dev/null
-  echo "Firewall: port 3000 open"
+  # Allow Docker containers to reach the credential proxy on the host
+  ufw allow from 172.17.0.0/16 to any port 3001 proto tcp >/dev/null
+  echo "Firewall: port 3000 open, Docker→proxy (3001) allowed"
 fi
 
 # ── Fix data directory permissions (Docker runs as node user, not root) ──
