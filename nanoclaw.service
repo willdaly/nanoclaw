@@ -1,0 +1,21 @@
+[Unit]
+Description=NanoClaw — Cake Ordering Swarm
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/nanoclaw
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/nanoclaw/logs/nanoclaw.log
+StandardError=append:/opt/nanoclaw/logs/nanoclaw.log
+
+# Environment — PUBLIC_URL tells the web channel and agent tools the real address
+EnvironmentFile=/opt/nanoclaw/.env
+Environment=PUBLIC_URL=http://172.105.158.89:3000
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

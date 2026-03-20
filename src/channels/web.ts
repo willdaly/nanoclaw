@@ -14,12 +14,69 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const WEB_JID = 'web:cake-demo';
 const WEB_PORT = parseInt(process.env.WEB_PORT || '3000', 10);
+const PUBLIC_URL =
+  process.env.PUBLIC_URL || `http://localhost:${WEB_PORT}`;
 const GROUP_FOLDER = 'web_cake-demo';
 const SOURCE_CLAUDE_MD = path.join(
   GROUPS_DIR,
   'cake-front-of-house',
   'CLAUDE.md',
 );
+
+function buildAgentFacts() {
+  return {
+    '@context': 'https://spec.projectnanda.org/agentfacts/v1.2.jsonld',
+    id: `uuid:cake-ordering-swarm-v1`,
+    handle: '@willdaly/cake-ordering-swarm',
+    name: 'Cake Ordering Swarm',
+    description:
+      'A Society of Agents for the NANDA Sandbox that handles end-to-end cake ordering. Cambridge, MA artisan bakery.',
+    version: '1.0.0',
+    url: PUBLIC_URL,
+    endpoint: PUBLIC_URL,
+    capabilities: [
+      'urn:nanda:cap:rag-search',
+      'urn:nanda:cap:order-placement',
+      'urn:nanda:cap:a2a-orchestration',
+      'urn:nanda:cap:nanda-registration',
+    ],
+    skills: [
+      {
+        id: 'cake-menu-rag',
+        name: 'Cake Menu Search',
+        description:
+          'Natural-language vector search over the cake catalog with allergen & pricing info',
+      },
+      {
+        id: 'delivery-check',
+        name: 'Delivery Availability',
+        description: 'Slot availability check by ZIP code, date and time',
+      },
+      {
+        id: 'cake-order-placement',
+        name: 'Order Placement',
+        description: 'Places orders and returns a receipt with order ID',
+      },
+      {
+        id: 'nanda-registration',
+        name: 'NANDA Registration',
+        description:
+          'Generates AgentFacts and registers the swarm with the NANDA Index',
+      },
+    ],
+    agents: [
+      { name: 'Front-of-House', role: 'Orchestrator' },
+      { name: 'Sommelier', role: 'RAG / Menu Expert' },
+      { name: 'Logistician', role: 'MCP / Booking & Delivery' },
+      { name: 'Diplomat', role: 'Registry & A2A Metadata' },
+    ],
+    auth: { type: 'none' },
+    meta: {
+      schema_version: '1.2',
+      published: new Date().toISOString(),
+    },
+  };
+}
 
 export class WebChannel implements Channel {
   name = 'web';
@@ -44,6 +101,12 @@ export class WebChannel implements Channel {
       if (req.url === '/' || req.url === '/index.html') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(htmlContent);
+      } else if (req.url === '/.well-known/agent.json') {
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        });
+        res.end(JSON.stringify(buildAgentFacts(), null, 2));
       } else {
         res.writeHead(404);
         res.end('Not found');
@@ -95,7 +158,7 @@ export class WebChannel implements Channel {
     await new Promise<void>((resolve, reject) => {
       this.server!.listen(WEB_PORT, () => {
         this.connected = true;
-        logger.info(`Web demo available at http://localhost:${WEB_PORT}`);
+        logger.info(`Web demo available at ${PUBLIC_URL}`);
         resolve();
       });
       this.server!.on('error', reject);

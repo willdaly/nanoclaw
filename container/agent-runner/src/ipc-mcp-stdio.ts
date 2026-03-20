@@ -650,11 +650,13 @@ Returns a unique order ID, itemised receipt, and estimated delivery window.`,
 //    to the NANDA Index and Registry.
 // ───────────────────────────────────────────────────────────────────────────
 
+const PUBLIC_URL = process.env.PUBLIC_URL || 'http://localhost:3000';
+
 const SWARM_AGENT_CARD = {
   name: 'Cake Ordering Swarm',
   description:
     'A Society of Agents for the NANDA Sandbox that handles end-to-end cake ordering. Composed of four specialist agents: Front-of-House (customer orchestration), Sommelier (menu RAG), Logistician (booking & delivery), and Diplomat (registry metadata).',
-  url: 'https://nanda.media.mit.edu/agents/cake-ordering-swarm',
+  url: PUBLIC_URL,
   version: '1.0.0',
   provider: {
     organization: 'University Project — NANDA Sandbox',
@@ -745,17 +747,23 @@ Call this when asked to "describe the swarm", "show agent metadata", or "prepare
   },
 );
 
+// Primary NANDA registry: MBTA Winter 2026 team's public registry (same class, live endpoint)
+// Fallback: official NANDA index (requires JWT — set NANDA_JWT env var)
+const MBTA_REGISTRY = 'http://97.107.132.213:6900/register';
+const NANDA_INDEX = process.env.NANDA_REGISTRY_URL || MBTA_REGISTRY;
+
 server.tool(
   'diplomat_register_to_nanda',
-  `[Diplomat Agent] Simulate registering the Cake Ordering Swarm to the NANDA Index and Registry. Generates the Agent Fact Card, performs a simulated HTTP POST to the NANDA registry endpoint, and returns the registration response.
+  `[Diplomat Agent] Register the Cake Ordering Swarm with the NANDA Index and Registry. Posts the Agent Fact Card to the live NANDA registry endpoint and returns the real registration response.
 
-In production this would POST to the live NANDA registry. In this sandbox environment it returns a realistic mock response.`,
+Primary registry: MBTA Winter 2026 public NANDA registry (same class project, open endpoint).
+Set NANDA_REGISTRY_URL env var to override with a different registry.`,
   {
-    override_url: z.string().optional().describe('Optional: override the NANDA registry endpoint URL for testing'),
+    override_url: z.string().optional().describe('Optional: override the NANDA registry endpoint URL'),
     notes: z.string().optional().describe('Optional notes to include in the registration payload'),
   },
   async (args) => {
-    const registryEndpoint = args.override_url || 'https://nanda.media.mit.edu/api/v1/registry/agents';
+    const registryEndpoint = args.override_url || NANDA_INDEX;
 
     const factCard = {
       ...SWARM_AGENT_CARD,
@@ -764,39 +772,58 @@ In production this would POST to the live NANDA registry. In this sandbox enviro
       registrationNotes: args.notes,
     };
 
-    // Simulate the POST — in production replace with a real fetch() call
-    const mockRegistrationId = `NANDA-${Date.now().toString(36).toUpperCase()}`;
-    const mockResponse = {
+    // Build the registration payload matching the MBTA registry schema
+    const payload = {
+      agent_id: 'cake-ordering-swarm',
+      name: factCard.name,
+      description: factCard.description,
+      capabilities: factCard.skills.map((s: { id: string }) => s.id),
+      agent_url: PUBLIC_URL,
+      facts_url: `${PUBLIC_URL}/.well-known/agent.json`,
+      status: 'alive',
+      protocol: 'a2a',
+      version: factCard.version,
+    };
+
+    let registrationResult: Record<string, unknown>;
+    try {
+      const response = await fetch(registryEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(10000),
+      });
+      const body = await response.text();
+      let parsed: unknown;
+      try { parsed = JSON.parse(body); } catch { parsed = body; }
+      registrationResult = {
+        status: response.status,
+        statusText: response.statusText,
+        body: parsed,
+      };
+    } catch (err) {
+      registrationResult = {
+        status: 0,
+        statusText: 'Network error',
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    const result = {
       agent: 'Diplomat',
       action: 'NANDA Registry Registration',
-      simulated: true,
       request: {
         method: 'POST',
         endpoint: registryEndpoint,
-        payloadSummary: {
-          agentName: factCard.name,
-          version: factCard.version,
-          skillCount: factCard.skills.length,
-          agentCount: factCard.agents.length,
-        },
+        payload,
       },
-      response: {
-        status: 201,
-        statusText: 'Created',
-        body: {
-          registrationId: mockRegistrationId,
-          agentName: factCard.name,
-          registeredAt: new Date().toISOString(),
-          indexUrl: `https://nanda.media.mit.edu/agents/${mockRegistrationId}`,
-          status: 'ACTIVE',
-          message: 'Agent successfully registered to the NANDA Index. Your AgentCard is now discoverable.',
-        },
-      },
+      response: registrationResult,
+      factsUrl: `${PUBLIC_URL}/.well-known/agent.json`,
       submittedFactCard: factCard,
     };
 
     return {
-      content: [{ type: 'text' as const, text: JSON.stringify(mockResponse, null, 2) }],
+      content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
     };
   },
 );
