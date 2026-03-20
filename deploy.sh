@@ -59,6 +59,17 @@ if [ ! -f "$APP_DIR/.env" ]; then
   exit 1
 fi
 
+# ── Warn if only OAuth token is configured (won't work on remote servers) ──
+if ! grep -q "ANTHROPIC_API_KEY" "$APP_DIR/.env" && grep -q "CLAUDE_CODE_OAUTH_TOKEN" "$APP_DIR/.env"; then
+  echo ""
+  echo "⚠️  WARNING: Only CLAUDE_CODE_OAUTH_TOKEN is set in .env."
+  echo "   OAuth tokens are session-bound to the issuing machine and will"
+  echo "   cause silent API failures on remote servers."
+  echo "   Add ANTHROPIC_API_KEY to .env for reliable server deployment."
+  echo "   Get one at: https://console.anthropic.com"
+  echo ""
+fi
+
 # ── Install npm deps and build ───────────────────────────────────────
 cd "$APP_DIR"
 npm ci --omit=dev 2>/dev/null || npm install

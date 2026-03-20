@@ -111,6 +111,13 @@ export function startCredentialProxy(
 
     server.listen(port, host, () => {
       logger.info({ port, host, authMode }, 'Credential proxy started');
+      if (authMode === 'oauth' && host !== '127.0.0.1') {
+        logger.warn(
+          'Running in OAuth mode on a non-localhost interface. ' +
+            'OAuth tokens are tied to the issuing machine and will fail on remote servers. ' +
+            'Set ANTHROPIC_API_KEY in .env for reliable server deployments.',
+        );
+      }
       resolve(server);
     });
 
