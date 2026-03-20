@@ -597,6 +597,13 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Reload registered groups — channels may self-register during connect()
+  registeredGroups = getAllRegisteredGroups();
+  logger.info(
+    { groupCount: Object.keys(registeredGroups).length },
+    'Groups reloaded after channel connect',
+  );
+
   // Start subsystems (independently of connection handler)
   startSchedulerLoop({
     registeredGroups: () => registeredGroups,
