@@ -14,8 +14,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const WEB_JID = 'web:cake-demo';
 const WEB_PORT = parseInt(process.env.WEB_PORT || '3000', 10);
-const PUBLIC_URL =
-  process.env.PUBLIC_URL || `http://localhost:${WEB_PORT}`;
+const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${WEB_PORT}`;
 const GROUP_FOLDER = 'web_cake-demo';
 const SOURCE_CLAUDE_MD = path.join(
   GROUPS_DIR,
