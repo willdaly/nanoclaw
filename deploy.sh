@@ -64,8 +64,10 @@ cd "$APP_DIR"
 npm ci --omit=dev 2>/dev/null || npm install
 npm run build
 
-# ── Pull latest agent container image ───────────────────────────────
-docker pull ghcr.io/qwibitai/nanoclaw:latest 2>/dev/null || true
+# ── Build agent container image ─────────────────────────────────────
+echo "Building agent container image (this takes ~2 min on first run)..."
+cd "$APP_DIR/container" && bash build.sh
+cd "$APP_DIR"
 
 # ── Install systemd service ──────────────────────────────────────────
 cp "$APP_DIR/nanoclaw.service" /etc/systemd/system/nanoclaw.service
