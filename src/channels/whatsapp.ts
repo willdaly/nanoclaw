@@ -395,4 +395,14 @@ export class WhatsAppChannel implements Channel {
   }
 }
 
-registerChannel('whatsapp', (opts: ChannelOpts) => new WhatsAppChannel(opts));
+registerChannel('whatsapp', (opts: ChannelOpts) => {
+  if (process.env.DISABLE_WHATSAPP === 'true') return null;
+  const credsPath = path.join(STORE_DIR, 'auth', 'creds.json');
+  if (!fs.existsSync(credsPath)) {
+    logger.info(
+      'WhatsApp credentials not found — channel disabled. Run /add-whatsapp to set up.',
+    );
+    return null;
+  }
+  return new WhatsAppChannel(opts);
+});
