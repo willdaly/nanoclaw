@@ -38,6 +38,14 @@ if [ -d "$APP_DIR/.git" ]; then
   cd "$APP_DIR"
   git fetch origin
   git reset --hard origin/main
+elif [ -d "$APP_DIR" ]; then
+  # Directory exists but no git repo — init inside it (preserves .env)
+  echo "Initialising git in existing directory..."
+  cd "$APP_DIR"
+  git init
+  git remote add origin "$REPO"
+  git fetch origin
+  git reset --hard origin/main
 else
   echo "Cloning repo..."
   git clone "$REPO" "$APP_DIR"
