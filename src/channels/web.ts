@@ -138,7 +138,7 @@ export class WebChannel implements Channel {
   async disconnect(): Promise<void> {
     this.connected = false;
     this.wss?.close();
-    await new Promise<void>(resolve => this.server?.close(() => resolve()));
+    await new Promise<void>((resolve) => this.server?.close(() => resolve()));
   }
 
   private ensureGroup(): void {
