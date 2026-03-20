@@ -10,6 +10,7 @@ import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
 import { CronExpressionParser } from 'cron-parser';
+import { searchCakeCatalog, CAKE_CATALOG } from './cake-data.js';
 
 const IPC_DIR = '/workspace/ipc';
 const MESSAGES_DIR = path.join(IPC_DIR, 'messages');
@@ -329,6 +330,473 @@ Use available_groups.json to find the JID for a group. The folder name must be c
 
     return {
       content: [{ type: 'text' as const, text: `Group "${args.name}" registered. It will start receiving messages immediately.` }],
+    };
+  },
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CAKE ORDERING SWARM — Agent Tools
+// Three specialist agents exposed as MCP tools to the Nanoclaw agent SDK.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ───────────────────────────────────────────────────────────────────────────
+// 1. SOMMELIER AGENT — Vector DB / RAG tool
+//    Searches the cake catalog via cosine-similarity on keyword term vectors.
+// ───────────────────────────────────────────────────────────────────────────
+
+server.tool(
+  'sommelier_search_cakes',
+  `[Sommelier Agent] Search the cake menu using natural language. Returns the top 3 most relevant cakes with full details including price, allergens, and available sizes.
+
+Examples: "vegan chocolate", "nut-free birthday cake", "gluten-free option for celiac guests", "light summery fruit cake".
+
+Use this tool whenever a customer asks about the menu, specific dietary needs, or wants a recommendation.`,
+  {
+    query: z.string().describe('Natural language search query, e.g. "dairy-free celebration cake" or "something chocolatey and vegan"'),
+    top_k: z.number().int().min(1).max(6).default(3).describe('Number of results to return (default: 3)'),
+  },
+  async (args) => {
+    const results = searchCakeCatalog(args.query, args.top_k ?? 3);
+
+    if (results.length === 0) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            agent: 'Sommelier',
+            query: args.query,
+            results: [],
+            message: 'No cakes matched that query. Try broader terms like "chocolate", "vegan", or "gluten-free".',
+          }, null, 2),
+        }],
+      };
+    }
+
+    const formatted = results.map(r => ({
+      id: r.cake.id,
+      name: r.cake.name,
+      description: r.cake.description,
+      price: `$${r.cake.price.toFixed(2)}`,
+      allergens: r.cake.allergens.length > 0 ? r.cake.allergens : ['none'],
+      dietaryNotes: [
+        r.cake.tags.includes('vegan') ? 'Vegan' : null,
+        r.cake.tags.includes('gluten-free') ? 'Gluten-Free' : null,
+        r.cake.tags.includes('dairy-free') ? 'Dairy-Free' : null,
+        r.cake.tags.includes('allergen-free') ? 'Allergen-Free' : null,
+      ].filter(Boolean),
+      availableSizes: r.cake.availableSizes,
+      servings: r.cake.servings,
+      relevanceScore: Math.round(r.score * 100) / 100,
+    }));
+
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          agent: 'Sommelier',
+          query: args.query,
+          resultsFound: results.length,
+          recommendations: formatted,
+        }, null, 2),
+      }],
+    };
+  },
+);
+
+server.tool(
+  'sommelier_list_all_cakes',
+  '[Sommelier Agent] List the complete cake catalog with all items, prices, and allergen information. Use when the customer wants to browse everything available.',
+  {},
+  async () => {
+    const catalog = CAKE_CATALOG.map(cake => ({
+      id: cake.id,
+      name: cake.name,
+      price: `$${cake.price.toFixed(2)}`,
+      allergens: cake.allergens.length > 0 ? cake.allergens : ['none'],
+      dietaryNotes: [
+        cake.tags.includes('vegan') ? 'Vegan' : null,
+        cake.tags.includes('gluten-free') ? 'Gluten-Free' : null,
+        cake.tags.includes('dairy-free') ? 'Dairy-Free' : null,
+        cake.tags.includes('allergen-free') ? 'Allergen-Free' : null,
+      ].filter(Boolean),
+      availableSizes: cake.availableSizes,
+    }));
+
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({ agent: 'Sommelier', totalItems: catalog.length, catalog }, null, 2),
+      }],
+    };
+  },
+);
+
+// ───────────────────────────────────────────────────────────────────────────
+// 2. LOGISTICIAN AGENT — MCP Booking & Execution tool
+//    Checks delivery availability and places orders, returning mock receipts.
+// ───────────────────────────────────────────────────────────────────────────
+
+// Slots stored in 24h for reliable comparison; displayed in 12h AM/PM to the customer.
+const DELIVERY_SLOTS: Record<string, string[]> = {
+  monday:    ['10:00', '12:00', '14:00', '16:00'],
+  tuesday:   ['10:00', '12:00', '14:00', '16:00'],
+  wednesday: ['10:00', '12:00', '14:00', '16:00'],
+  thursday:  ['10:00', '12:00', '14:00', '16:00'],
+  friday:    ['10:00', '12:00', '14:00'],
+  saturday:  ['10:00', '12:00'],
+  sunday:    [],
+};
+
+function to12h(time24: string): string {
+  const [hStr, mStr] = time24.split(':');
+  const h = parseInt(hStr, 10);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${mStr} ${period}`;
+}
+
+/** Normalise user-supplied time to 24h HH:MM for slot comparison.
+ *  Accepts "2:00 PM", "2 PM", "14:00", "14" etc. */
+function normalise24h(raw: string): string {
+  const cleaned = raw.trim().toUpperCase();
+  const pmMatch = cleaned.match(/^(\d{1,2})(?::(\d{2}))?\s*PM$/);
+  const amMatch = cleaned.match(/^(\d{1,2})(?::(\d{2}))?\s*AM$/);
+  if (pmMatch) {
+    const h = (parseInt(pmMatch[1], 10) % 12) + 12;
+    return `${String(h).padStart(2, '0')}:${pmMatch[2] ?? '00'}`;
+  }
+  if (amMatch) {
+    const h = parseInt(amMatch[1], 10) % 12;
+    return `${String(h).padStart(2, '0')}:${amMatch[2] ?? '00'}`;
+  }
+  // Already 24h or plain number
+  if (/^\d{1,2}$/.test(cleaned)) return `${cleaned.padStart(2, '0')}:00`;
+  return cleaned.slice(0, 5); // pass through as-is
+}
+
+server.tool(
+  'logistician_check_delivery',
+  `[Logistician Agent] Check delivery availability for a given date, time, and ZIP code. Call this before placing an order to confirm the slot is available.
+
+Returns available slots for the requested date, or the nearest available options if the requested slot is taken.`,
+  {
+    postcode: z.string().describe('US ZIP code for delivery (e.g. "02139")'),
+    requested_date: z.string().describe('Requested delivery date in ISO format YYYY-MM-DD'),
+    requested_time: z.string().describe('Requested delivery time — accepts 12-hour (e.g. "2:00 PM") or 24-hour (e.g. "14:00") format'),
+  },
+  async (args) => {
+    const date = new Date(args.requested_date);
+    const dayName = date.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as keyof typeof DELIVERY_SLOTS;
+    const slots = DELIVERY_SLOTS[dayName] ?? [];
+
+    // Simulate zone check: ZIP codes outside the continental US are out of range
+    const zip = args.postcode.trim().replace(/\D/g, '').slice(0, 5);
+    const zipNum = parseInt(zip, 10);
+    const outOfZone =
+      (zipNum >= 99500 && zipNum <= 99999) || // Alaska
+      (zipNum >= 96700 && zipNum <= 96899) || // Hawaii
+      (zipNum >= 600   && zipNum <= 988)   || // US territories (PR, GU, VI: 006xx–009xx)
+      (zipNum >= 9000  && zipNum <= 9899);    // APO/FPO
+
+    if (outOfZone) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            agent: 'Logistician',
+            available: false,
+            reason: `ZIP code ${args.postcode} is outside our delivery zone. We deliver within the continental United States only. Please arrange pickup instead.`,
+            pickupAddress: '18 Brattle Street, Cambridge, MA 02138',
+            pickupHours: 'Tue–Sun 8:00 AM–6:00 PM',
+          }, null, 2),
+        }],
+      };
+    }
+
+    if (slots.length === 0) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            agent: 'Logistician',
+            available: false,
+            reason: `We do not offer deliveries on ${dayName.charAt(0).toUpperCase() + dayName.slice(1)}s.`,
+            nextAvailableDay: 'Monday',
+            availableSlots: DELIVERY_SLOTS['monday'].map(to12h),
+          }, null, 2),
+        }],
+      };
+    }
+
+    const requested24h = normalise24h(args.requested_time);
+    const slotAvailable = slots.includes(requested24h);
+
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          agent: 'Logistician',
+          requestedDate: args.requested_date,
+          requestedTime: to12h(requested24h),
+          dayOfWeek: dayName,
+          zipCode: args.postcode,
+          available: slotAvailable,
+          allSlotsForDay: slots.map(to12h),
+          message: slotAvailable
+            ? `Great news! The ${to12h(requested24h)} slot on ${args.requested_date} is available for delivery to ${args.postcode}.`
+            : `The ${to12h(requested24h)} slot is unavailable. Please choose from: ${slots.map(to12h).join(', ')}.`,
+          deliveryFee: '$12.00',
+          cutoffTime: '48 hours before delivery',
+        }, null, 2),
+      }],
+    };
+  },
+);
+
+server.tool(
+  'logistician_place_order',
+  `[Logistician Agent] Place a cake order and receive a booking confirmation receipt. Only call this after confirming delivery availability with logistician_check_delivery.
+
+Returns a unique order ID, itemised receipt, and estimated delivery window.`,
+  {
+    cake_id: z.string().describe('The cake ID from the sommelier search results (e.g. "vegan-choc-001")'),
+    size: z.string().describe('Cake size (e.g. "8-inch")'),
+    customer_name: z.string().describe('Full name of the customer'),
+    customer_phone: z.string().describe('Customer phone number'),
+    delivery_postcode: z.string().describe('Delivery ZIP code'),
+    delivery_date: z.string().describe('Confirmed delivery date YYYY-MM-DD'),
+    delivery_time: z.string().describe('Confirmed delivery time HH:MM'),
+    special_instructions: z.string().optional().describe('Personalization, dietary notes, or delivery instructions'),
+  },
+  async (args) => {
+    const cake = CAKE_CATALOG.find(c => c.id === args.cake_id);
+
+    if (!cake) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            agent: 'Logistician',
+            success: false,
+            error: `Unknown cake ID "${args.cake_id}". Please use sommelier_search_cakes to find valid cake IDs.`,
+          }, null, 2),
+        }],
+        isError: true,
+      };
+    }
+
+    if (!cake.availableSizes.includes(args.size)) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            agent: 'Logistician',
+            success: false,
+            error: `Size "${args.size}" not available for ${cake.name}. Available sizes: ${cake.availableSizes.join(', ')}.`,
+          }, null, 2),
+        }],
+        isError: true,
+      };
+    }
+
+    const orderId = `COW-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    const deliveryFee = 12.00;
+    const subtotal = cake.price;
+    const total = subtotal + deliveryFee;
+
+    const receipt = {
+      agent: 'Logistician',
+      success: true,
+      orderId,
+      status: 'CONFIRMED',
+      placedAt: new Date().toISOString(),
+      customer: {
+        name: args.customer_name,
+        phone: args.customer_phone,
+      },
+      items: [
+        {
+          description: `${cake.name} (${args.size})`,
+          servings: cake.servings[args.size] || 'N/A',
+          price: `$${subtotal.toFixed(2)}`,
+        },
+      ],
+      delivery: {
+        zipCode: args.delivery_postcode,
+        date: args.delivery_date,
+        timeSlot: args.delivery_time,
+        fee: `$${deliveryFee.toFixed(2)}`,
+      },
+      pricing: {
+        subtotal: `$${subtotal.toFixed(2)}`,
+        deliveryFee: `$${deliveryFee.toFixed(2)}`,
+        total: `$${total.toFixed(2)}`,
+      },
+      specialInstructions: args.special_instructions || 'None',
+      paymentStatus: 'PENDING — pay on delivery',
+      cancellationPolicy: 'Free cancellation up to 48 hours before delivery.',
+      confirmationNote: `Your order ${orderId} is confirmed! We will contact ${args.customer_phone} with a 30-minute delivery window on the day.`,
+    };
+
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(receipt, null, 2) }],
+    };
+  },
+);
+
+// ───────────────────────────────────────────────────────────────────────────
+// 3. DIPLOMAT AGENT — NANDA Registry tool
+//    Generates an A2A-compatible Agent Fact Card and simulates registration
+//    to the NANDA Index and Registry.
+// ───────────────────────────────────────────────────────────────────────────
+
+const SWARM_AGENT_CARD = {
+  name: 'Cake Ordering Swarm',
+  description:
+    'A Society of Agents for the NANDA Sandbox that handles end-to-end cake ordering. Composed of four specialist agents: Front-of-House (customer orchestration), Sommelier (menu RAG), Logistician (booking & delivery), and Diplomat (registry metadata).',
+  url: 'https://nanda.media.mit.edu/agents/cake-ordering-swarm',
+  version: '1.0.0',
+  provider: {
+    organization: 'University Project — NANDA Sandbox',
+    contact: 'nanda-sandbox@example.ac.uk',
+  },
+  capabilities: {
+    streaming: false,
+    pushNotifications: false,
+    stateTransitionHistory: true,
+    multiAgentCollaboration: true,
+    vectorSearch: true,
+    mcpTools: true,
+  },
+  skills: [
+    {
+      id: 'cake-menu-rag',
+      name: 'Menu RAG Search',
+      description:
+        'Natural-language search over a cake catalog using cosine-similarity vector retrieval (Sommelier Agent). Surfaces matching items with allergen info, pricing, and serving sizes.',
+      inputModes: ['text'],
+      outputModes: ['text', 'application/json'],
+    },
+    {
+      id: 'delivery-check',
+      name: 'Delivery Availability Check',
+      description:
+        'Checks delivery slot availability for a given ZIP code, date, and time (Logistician Agent). Returns available windows and delivery fees.',
+      inputModes: ['text'],
+      outputModes: ['application/json'],
+    },
+    {
+      id: 'cake-order-placement',
+      name: 'Order Placement & Receipt',
+      description:
+        'Places a confirmed cake order and returns a structured booking receipt with order ID (Logistician Agent).',
+      inputModes: ['text'],
+      outputModes: ['application/json'],
+    },
+    {
+      id: 'nanda-registration',
+      name: 'NANDA Registry Registration',
+      description:
+        'Generates and submits an Agent Fact Card to the NANDA Index (Diplomat Agent). Follows the A2A AgentCard specification.',
+      inputModes: ['application/json'],
+      outputModes: ['application/json'],
+    },
+  ],
+  agents: [
+    {
+      name: 'Front-of-House',
+      role: 'Orchestrator',
+      description: 'Customer-facing agent that understands requests and delegates to specialist sub-agents via A2A.',
+    },
+    {
+      name: 'Sommelier',
+      role: 'Menu Expert (RAG)',
+      description: 'Retrieves relevant cake options from a vector-indexed catalog using cosine-similarity search.',
+    },
+    {
+      name: 'Logistician',
+      role: 'Booking & Execution (MCP)',
+      description: 'Handles delivery availability checks and order placement via simulated MCP tool calls.',
+    },
+    {
+      name: 'Diplomat',
+      role: 'Registry & Metadata',
+      description: 'Generates AgentCard metadata and registers the swarm with the NANDA Index.',
+    },
+  ],
+};
+
+server.tool(
+  'diplomat_generate_agent_fact_card',
+  `[Diplomat Agent] Generate the Agent Fact Card for the Cake Ordering Swarm. Returns a structured JSON document that describes all agents in the society, their capabilities, and their skills — formatted for submission to the NANDA Index and Registry.
+
+Call this when asked to "describe the swarm", "show agent metadata", or "prepare NANDA registration".`,
+  {},
+  async () => {
+    const factCard = {
+      ...SWARM_AGENT_CARD,
+      generatedAt: new Date().toISOString(),
+      schemaVersion: 'a2a/agent-card/v1',
+    };
+
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(factCard, null, 2) }],
+    };
+  },
+);
+
+server.tool(
+  'diplomat_register_to_nanda',
+  `[Diplomat Agent] Simulate registering the Cake Ordering Swarm to the NANDA Index and Registry. Generates the Agent Fact Card, performs a simulated HTTP POST to the NANDA registry endpoint, and returns the registration response.
+
+In production this would POST to the live NANDA registry. In this sandbox environment it returns a realistic mock response.`,
+  {
+    override_url: z.string().optional().describe('Optional: override the NANDA registry endpoint URL for testing'),
+    notes: z.string().optional().describe('Optional notes to include in the registration payload'),
+  },
+  async (args) => {
+    const registryEndpoint = args.override_url || 'https://nanda.media.mit.edu/api/v1/registry/agents';
+
+    const factCard = {
+      ...SWARM_AGENT_CARD,
+      generatedAt: new Date().toISOString(),
+      schemaVersion: 'a2a/agent-card/v1',
+      registrationNotes: args.notes,
+    };
+
+    // Simulate the POST — in production replace with a real fetch() call
+    const mockRegistrationId = `NANDA-${Date.now().toString(36).toUpperCase()}`;
+    const mockResponse = {
+      agent: 'Diplomat',
+      action: 'NANDA Registry Registration',
+      simulated: true,
+      request: {
+        method: 'POST',
+        endpoint: registryEndpoint,
+        payloadSummary: {
+          agentName: factCard.name,
+          version: factCard.version,
+          skillCount: factCard.skills.length,
+          agentCount: factCard.agents.length,
+        },
+      },
+      response: {
+        status: 201,
+        statusText: 'Created',
+        body: {
+          registrationId: mockRegistrationId,
+          agentName: factCard.name,
+          registeredAt: new Date().toISOString(),
+          indexUrl: `https://nanda.media.mit.edu/agents/${mockRegistrationId}`,
+          status: 'ACTIVE',
+          message: 'Agent successfully registered to the NANDA Index. Your AgentCard is now discoverable.',
+        },
+      },
+      submittedFactCard: factCard,
+    };
+
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(mockResponse, null, 2) }],
     };
   },
 );
