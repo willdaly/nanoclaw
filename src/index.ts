@@ -332,6 +332,19 @@ async function runAgent(
     }
 
     if (output.status === 'error') {
+      // Auto-recover from stale session (e.g. after deploying to a new server)
+      if (
+        output.error?.includes('No conversation found with session ID') &&
+        sessionId
+      ) {
+        logger.warn(
+          { group: group.name, sessionId },
+          'Stale session detected — clearing and retrying with fresh session',
+        );
+        delete sessions[group.folder];
+        setSession(group.folder, '');
+        return runAgent(group, prompt, chatJid, onOutput);
+      }
       logger.error(
         { group: group.name, error: output.error },
         'Container agent error',

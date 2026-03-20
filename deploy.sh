@@ -26,8 +26,8 @@ if ! command -v docker &>/dev/null; then
   systemctl enable --now docker
 fi
 
-if ! command -v git &>/dev/null; then
-  apt-get install -y git
+if ! command -v git &>/dev/null || ! command -v sqlite3 &>/dev/null; then
+  apt-get install -y -q git sqlite3
 fi
 
 echo "Node: \$(node --version)  Docker: \$(docker --version | head -c30)"
@@ -68,6 +68,21 @@ npm run build
 echo "Building agent container image (this takes ~2 min on first run)..."
 cd "$APP_DIR/container" && bash build.sh
 cd "$APP_DIR"
+
+# ── Open firewall port 3000 ──────────────────────────────────────────
+if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
+  ufw allow 3000/tcp >/dev/null
+  echo "Firewall: port 3000 open"
+fi
+
+# ── Fix data directory permissions (Docker runs as node user, not root) ──
+chmod -R 777 "$APP_DIR/data" "$APP_DIR/groups" 2>/dev/null || true
+
+# ── Clear stale sessions (safe on re-deploy; agents start fresh) ─────
+if [ -f "$APP_DIR/store/messages.db" ]; then
+  sqlite3 "$APP_DIR/store/messages.db" 'DELETE FROM sessions' 2>/dev/null || true
+  echo "Stale sessions cleared"
+fi
 
 # ── Install systemd service ──────────────────────────────────────────
 cp "$APP_DIR/nanoclaw.service" /etc/systemd/system/nanoclaw.service
