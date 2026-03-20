@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cake Ordering Swarm</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #fdf8f0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ─────────────────────────────────────────── */
+    #header {
+      background: #8B4513;
+      color: #fff;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    }
+    #header h1 { font-size: 1.1rem; font-weight: 600; flex: 1; }
+    #header small { font-size: 0.78rem; opacity: 0.85; }
+    #status-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #ff4444; flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    #status-dot.live { background: #4caf50; }
+
+    /* ── Main area ───────────────────────────────────────── */
+    #main {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* ── Chat panel ──────────────────────────────────────── */
+    #chat-panel {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-width: 0;
+      border-right: 1px solid #e8dcc8;
+    }
+
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .bubble {
+      max-width: 72%;
+      padding: 10px 14px;
+      border-radius: 18px;
+      line-height: 1.45;
+      font-size: 0.9rem;
+      word-wrap: break-word;
+    }
+    .bubble.user {
+      align-self: flex-end;
+      background: #8B4513;
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .bubble.assistant {
+      align-self: flex-start;
+      background: #fff;
+      color: #333;
+      border-bottom-left-radius: 4px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+    }
+    .bubble.assistant pre {
+      font-family: 'Courier New', monospace;
+      font-size: 0.8rem;
+      background: #f5f0e8;
+      border-radius: 6px;
+      padding: 8px;
+      overflow-x: auto;
+      margin-top: 6px;
+      white-space: pre-wrap;
+    }
+    .bubble .ts {
+      font-size: 0.68rem;
+      opacity: 0.55;
+      margin-top: 4px;
+      display: block;
+    }
+
+    #typing-indicator {
+      align-self: flex-start;
+      display: none;
+      background: #fff;
+      border-radius: 18px;
+      border-bottom-left-radius: 4px;
+      padding: 10px 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+      font-size: 0.85rem;
+      color: #8B4513;
+    }
+    #typing-indicator.visible { display: block; }
+    .dot-anim span {
+      display: inline-block;
+      animation: bounce 1.2s infinite;
+      font-size: 1.2rem;
+      line-height: 1;
+    }
+    .dot-anim span:nth-child(2) { animation-delay: 0.2s; }
+    .dot-anim span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); }
+      40% { transform: translateY(-5px); }
+    }
+
+    /* ── Quick prompts ───────────────────────────────────── */
+    #quick-prompts {
+      padding: 8px 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      border-top: 1px solid #e8dcc8;
+      background: #fdf8f0;
+    }
+    .qp-btn {
+      background: #fff;
+      border: 1px solid #c8a87a;
+      color: #8B4513;
+      padding: 5px 12px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: all 0.15s;
+    }
+    .qp-btn:hover { background: #8B4513; color: #fff; border-color: #8B4513; }
+
+    /* ── Input bar ───────────────────────────────────────── */
+    #input-bar {
+      display: flex;
+      gap: 8px;
+      padding: 10px 14px;
+      border-top: 1px solid #e8dcc8;
+      background: #fff;
+      flex-shrink: 0;
+    }
+    #input {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid #d0b88a;
+      border-radius: 22px;
+      font-size: 0.9rem;
+      outline: none;
+      background: #fdf8f0;
+      transition: border-color 0.2s;
+    }
+    #input:focus { border-color: #8B4513; }
+    #send-btn {
+      background: #8B4513;
+      color: #fff;
+      border: none;
+      border-radius: 22px;
+      padding: 10px 20px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: background 0.15s;
+    }
+    #send-btn:hover { background: #6b3210; }
+    #send-btn:disabled { background: #c8a87a; cursor: default; }
+
+    /* ── Activity panel ──────────────────────────────────── */
+    #activity-panel {
+      width: 280px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+    }
+    #activity-header {
+      padding: 12px 16px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: #8B4513;
+      border-bottom: 1px solid #e8dcc8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    #activity-log {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .activity-item {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      font-size: 0.8rem;
+      padding: 8px;
+      background: #fdf8f0;
+      border-radius: 8px;
+      border-left: 3px solid #c8a87a;
+    }
+    .activity-item.pending { border-left-color: #f0a030; }
+    .activity-item.done { border-left-color: #4caf50; }
+    .activity-emoji { font-size: 1.1rem; flex-shrink: 0; }
+    .activity-content { flex: 1; min-width: 0; }
+    .activity-agent { font-weight: 600; color: #8B4513; }
+    .activity-text { color: #555; margin-top: 1px; }
+    .activity-time { font-size: 0.7rem; color: #999; margin-top: 2px; }
+
+    #activity-placeholder {
+      color: #bbb;
+      font-size: 0.8rem;
+      text-align: center;
+      padding: 24px 12px;
+      font-style: italic;
+    }
+
+    @media (max-width: 640px) {
+      #activity-panel { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <span style="font-size:1.5rem">🎂</span>
+  <div style="flex:1">
+    <h1>Cake Ordering Swarm</h1>
+    <small>Cambridge, MA &bull; Premium Artisan Bakery</small>
+  </div>
+  <div id="status-dot" title="Connecting..."></div>
+</div>
+
+<div id="main">
+  <!-- Chat panel -->
+  <div id="chat-panel">
+    <div id="messages">
+      <div class="bubble assistant">
+        Welcome! I'm Andy, your personal cake advisor at our Cambridge bakery.
+        Whether you're celebrating a birthday, wedding, or just craving
+        something special — I'm here to help you find the perfect cake.<br><br>
+        What can I get started for you today?
+      </div>
+    </div>
+    <div id="typing-indicator">
+      Andy is thinking <span class="dot-anim"><span>·</span><span>·</span><span>·</span></span>
+    </div>
+    <div id="quick-prompts">
+      <button class="qp-btn" onclick="sendQuick('Show me your full cake menu')">Show me your cake menu</button>
+      <button class="qp-btn" onclick="sendQuick('I need a vegan chocolate cake for a birthday party')">Vegan chocolate cake</button>
+      <button class="qp-btn" onclick="sendQuick('Can you deliver to ZIP code 02139 on Friday at 2 PM?')">Check delivery 02139</button>
+      <button class="qp-btn" onclick="sendQuick('What are your gluten-free options?')">Gluten-free options</button>
+      <button class="qp-btn" onclick="sendQuick('Register the swarm to NANDA and show me the agent card')">Register to NANDA</button>
+    </div>
+    <div id="input-bar">
+      <input id="input" type="text" placeholder="Type a message..." autocomplete="off" />
+      <button id="send-btn" onclick="send()">Send →</button>
+    </div>
+  </div>
+
+  <!-- Activity panel -->
+  <div id="activity-panel">
+    <div id="activity-header">Agent Activity</div>
+    <div id="activity-log">
+      <div id="activity-placeholder">Agent activity will appear here as Andy delegates tasks to the swarm...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const AGENT_MAP = {
+    'sommelier':    { emoji: '🍰', label: 'Sommelier' },
+    'menu':         { emoji: '🍰', label: 'Sommelier' },
+    'cake':         { emoji: '🍰', label: 'Sommelier' },
+    'logistician':  { emoji: '📦', label: 'Logistician' },
+    'delivery':     { emoji: '📦', label: 'Logistician' },
+    'order':        { emoji: '📦', label: 'Logistician' },
+    'diplomat':     { emoji: '📋', label: 'Diplomat' },
+    'nanda':        { emoji: '📋', label: 'Diplomat' },
+    'register':     { emoji: '📋', label: 'Diplomat' },
+  };
+
+  function detectAgent(text) {
+    const lower = text.toLowerCase();
+    for (const [key, val] of Object.entries(AGENT_MAP)) {
+      if (lower.includes(key)) return val;
+    }
+    return { emoji: '🤔', label: 'Andy' };
+  }
+
+  let ws;
+  let reconnectDelay = 1000;
+  let currentActivity = null;
+  let activityStartTime = null;
+
+  function connect() {
+    const url = `ws://${location.host}/ws`;
+    ws = new WebSocket(url);
+
+    ws.onopen = () => {
+      document.getElementById('status-dot').classList.add('live');
+      document.getElementById('status-dot').title = 'Connected';
+      reconnectDelay = 1000;
+    };
+
+    ws.onclose = () => {
+      document.getElementById('status-dot').classList.remove('live');
+      document.getElementById('status-dot').title = 'Disconnected — reconnecting...';
+      setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+    };
+
+    ws.onerror = () => ws.close();
+
+    ws.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === 'message' && msg.role === 'assistant') {
+          hideTyping();
+          completeActivity();
+          appendMessage('assistant', msg.text, msg.timestamp);
+        } else if (msg.type === 'typing') {
+          if (msg.isTyping) showTyping(); else hideTyping();
+        }
+      } catch(e) {}
+    };
+  }
+
+  function showTyping() {
+    document.getElementById('typing-indicator').classList.add('visible');
+    scrollBottom();
+  }
+
+  function hideTyping() {
+    document.getElementById('typing-indicator').classList.remove('visible');
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function maybeFormatJson(text) {
+    // Detect JSON blocks and render them in <pre>
+    return text.replace(/```(?:json)?\n?([\s\S]*?)```/g, (_, code) => {
+      try {
+        const parsed = JSON.parse(code.trim());
+        return `<pre>${JSON.stringify(parsed, null, 2)}</pre>`;
+      } catch {
+        return `<pre>${escHtml(code)}</pre>`;
+      }
+    });
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function renderText(text) {
+    // Convert *bold* to <strong>, • to bullet, preserve newlines
+    let s = escHtml(text);
+    s = s.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>');
+    s = s.replace(/\n/g, '<br>');
+    // Re-run json block detection on original text
+    const jsonMatches = text.match(/```(?:json)?\n?([\s\S]*?)```/g);
+    if (jsonMatches) {
+      s = maybeFormatJson(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      // Actually, render raw with code block support
+      s = text
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/\*([^*\n]+)\*/g,'<strong>$1</strong>')
+        .replace(/\n/g,'<br>');
+      s = s.replace(/```(?:json)?&lt;br&gt;([\s\S]*?)```/g, (_, code) => {
+        const decoded = code.replace(/&lt;br&gt;/g,'\n').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+        try {
+          return `<pre>${JSON.stringify(JSON.parse(decoded), null, 2)}</pre>`;
+        } catch {
+          return `<pre>${code}</pre>`;
+        }
+      });
+    }
+    return s;
+  }
+
+  function appendMessage(role, text, ts) {
+    const div = document.createElement('div');
+    div.className = `bubble ${role}`;
+    div.innerHTML = renderText(text) + `<span class="ts">${fmtTime(ts)}</span>`;
+    document.getElementById('messages').appendChild(div);
+
+    // Log progress updates to activity panel
+    if (role === 'assistant') {
+      const progressPatterns = [
+        /let me check our menu/i,
+        /checking delivery/i,
+        /placing your order/i,
+        /searching.*cake/i,
+        /let me.*search/i,
+        /checking.*slot/i,
+        /delegating/i,
+      ];
+      for (const p of progressPatterns) {
+        if (p.test(text)) {
+          addActivity(text, false);
+          break;
+        }
+      }
+    }
+    scrollBottom();
+  }
+
+  function addActivity(text, isDone) {
+    const log = document.getElementById('activity-log');
+    const placeholder = document.getElementById('activity-placeholder');
+    if (placeholder) placeholder.remove();
+
+    if (currentActivity && !isDone) {
+      completeActivity();
+    }
+
+    const agent = detectAgent(text);
+    const item = document.createElement('div');
+    item.className = `activity-item ${isDone ? 'done' : 'pending'}`;
+    item.innerHTML = `
+      <span class="activity-emoji">${agent.emoji}</span>
+      <div class="activity-content">
+        <div class="activity-agent">${agent.label}</div>
+        <div class="activity-text">${escHtml(text.slice(0, 80))}${text.length > 80 ? '…' : ''}</div>
+        <div class="activity-time">${fmtTime(new Date().toISOString())}</div>
+      </div>`;
+
+    log.appendChild(item);
+    log.scrollTop = log.scrollHeight;
+
+    if (!isDone) {
+      currentActivity = item;
+      activityStartTime = Date.now();
+    }
+  }
+
+  function completeActivity() {
+    if (currentActivity) {
+      currentActivity.classList.remove('pending');
+      currentActivity.classList.add('done');
+      if (activityStartTime) {
+        const elapsed = ((Date.now() - activityStartTime) / 1000).toFixed(1);
+        const timeEl = currentActivity.querySelector('.activity-time');
+        if (timeEl) timeEl.textContent += ` · ${elapsed}s`;
+      }
+      currentActivity = null;
+      activityStartTime = null;
+    }
+  }
+
+  function scrollBottom() {
+    const m = document.getElementById('messages');
+    m.scrollTop = m.scrollHeight;
+  }
+
+  function send() {
+    const input = document.getElementById('input');
+    const text = input.value.trim();
+    if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+    appendMessage('user', text, new Date().toISOString());
+    ws.send(JSON.stringify({ type: 'message', text }));
+    input.value = '';
+  }
+
+  function sendQuick(text) {
+    const input = document.getElementById('input');
+    input.value = text;
+    send();
+  }
+
+  document.getElementById('input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+
+  connect();
+</script>
+</body>
+</html>

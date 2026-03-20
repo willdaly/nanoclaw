@@ -13,10 +13,28 @@ logs/
 groups/*
 !groups/main/
 !groups/global/
+!groups/cake-front-of-house/
+!groups/cake-sommelier/
+!groups/cake-logistician/
+!groups/cake-diplomat/
+!groups/web_cake-demo/
+!groups/whatsapp_cake-front-of-house/
 groups/main/*
 groups/global/*
+groups/cake-front-of-house/*
+groups/cake-sommelier/*
+groups/cake-logistician/*
+groups/cake-diplomat/*
+groups/web_cake-demo/*
+groups/whatsapp_cake-front-of-house/*
 !groups/main/CLAUDE.md
 !groups/global/CLAUDE.md
+!groups/cake-front-of-house/CLAUDE.md
+!groups/cake-sommelier/CLAUDE.md
+!groups/cake-logistician/CLAUDE.md
+!groups/cake-diplomat/CLAUDE.md
+!groups/web_cake-demo/CLAUDE.md
+!groups/whatsapp_cake-front-of-house/CLAUDE.md
 
 # Secrets
 *.keys.json
