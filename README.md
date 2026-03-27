@@ -106,6 +106,55 @@ From the main channel (your self-chat), you can manage groups and tasks:
 @Andy join the Family Chat group
 ```
 
+## Register on NANDA Index
+
+NanoClaw can publish an Agent Fact Card at:
+
+```text
+/.well-known/agent.json
+```
+
+To register the running deployment with the NANDA registry, set values in `.env`:
+
+```bash
+PUBLIC_URL=https://your-domain.example
+NANDA_REGISTRY_URL=http://registry.chat39.com:6900
+NANDA_AGENT_ID=nanoclaw-main
+NANDA_AGENT_TAGS=assistant,orchestrator,nanoclaw
+```
+
+Then run:
+
+```bash
+# Preview payloads only
+npm run register:nanda -- --dry-run
+
+# Register for real (POST /register + PUT /agents/<id>/status)
+npm run register:nanda
+```
+
+The script validates HTTPS by default. For temporary testing against plain HTTP endpoints, use:
+
+```bash
+npm run register:nanda -- --allow-http
+```
+
+When `NODE_ENV=production`, NanoClaw requires `PUBLIC_URL` to be HTTPS and non-local by default.
+Set `ALLOW_INSECURE_PUBLIC_URL=true` only as a temporary exception.
+
+`deploy.sh` now runs registration automatically after restart:
+
+1. Dry run
+2. Real registration
+
+Disable that behavior for a deploy by setting `NANDA_AUTO_REGISTER=false` in the deploy shell environment.
+
+Recommended production setup:
+
+- Use a domain-backed `PUBLIC_URL` with valid TLS
+- Keep only web ports publicly exposed (for example 80/443)
+- Keep credential proxy port (`3001`) private to the host/container bridge
+
 ## Customizing
 
 NanoClaw doesn't use configuration files. To make changes, just tell Claude Code what you want:

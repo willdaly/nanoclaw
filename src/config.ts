@@ -6,13 +6,59 @@ import { readEnvFile } from './env.js';
 // Read config values from .env (falls back to process.env).
 // Secrets (API keys, tokens) are NOT read here — they are loaded only
 // by the credential proxy (credential-proxy.ts), never exposed to containers.
-const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER']);
+const envConfig = readEnvFile([
+  'ASSISTANT_NAME',
+  'ASSISTANT_HAS_OWN_NUMBER',
+  'WEB_PORT',
+  'PUBLIC_URL',
+  'NANDA_REGISTRY_URL',
+  'NANDA_AGENT_ID',
+  'NANDA_AGENT_HANDLE',
+  'NANDA_AGENT_NAME',
+  'NANDA_AGENT_DESCRIPTION',
+  'NANDA_AGENT_VERSION',
+  'NANDA_AGENT_CAPABILITIES',
+  'NANDA_AGENT_TAGS',
+  'ALLOW_INSECURE_PUBLIC_URL',
+]);
 
 export const ASSISTANT_NAME =
   process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Andy';
 export const ASSISTANT_HAS_OWN_NUMBER =
   (process.env.ASSISTANT_HAS_OWN_NUMBER ||
     envConfig.ASSISTANT_HAS_OWN_NUMBER) === 'true';
+export const WEB_PORT = parseInt(
+  process.env.WEB_PORT || envConfig.WEB_PORT || '3000',
+  10,
+);
+export const PUBLIC_URL =
+  process.env.PUBLIC_URL || envConfig.PUBLIC_URL || `http://localhost:${WEB_PORT}`;
+export const NANDA_REGISTRY_URL =
+  process.env.NANDA_REGISTRY_URL ||
+  envConfig.NANDA_REGISTRY_URL ||
+  'http://registry.chat39.com:6900';
+export const NANDA_AGENT_ID =
+  process.env.NANDA_AGENT_ID || envConfig.NANDA_AGENT_ID || 'nanoclaw-main';
+export const NANDA_AGENT_HANDLE =
+  process.env.NANDA_AGENT_HANDLE ||
+  envConfig.NANDA_AGENT_HANDLE ||
+  '@nanoclaw/main';
+export const NANDA_AGENT_NAME =
+  process.env.NANDA_AGENT_NAME || envConfig.NANDA_AGENT_NAME || 'NanoClaw Agent';
+export const NANDA_AGENT_DESCRIPTION =
+  process.env.NANDA_AGENT_DESCRIPTION ||
+  envConfig.NANDA_AGENT_DESCRIPTION ||
+  'A container-isolated Claude assistant orchestrator with multi-channel routing.';
+export const NANDA_AGENT_VERSION =
+  process.env.NANDA_AGENT_VERSION || envConfig.NANDA_AGENT_VERSION || '1.0.0';
+export const NANDA_AGENT_CAPABILITIES =
+  process.env.NANDA_AGENT_CAPABILITIES || envConfig.NANDA_AGENT_CAPABILITIES || '';
+export const NANDA_AGENT_TAGS =
+  process.env.NANDA_AGENT_TAGS || envConfig.NANDA_AGENT_TAGS || '';
+export const ALLOW_INSECURE_PUBLIC_URL =
+  (process.env.ALLOW_INSECURE_PUBLIC_URL ||
+    envConfig.ALLOW_INSECURE_PUBLIC_URL ||
+    'false') === 'true';
 export const POLL_INTERVAL = 2000;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 

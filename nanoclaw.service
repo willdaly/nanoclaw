@@ -14,8 +14,8 @@ StandardError=append:/opt/nanoclaw/logs/nanoclaw.log
 
 # Environment — PUBLIC_URL tells the web channel and agent tools the real address
 EnvironmentFile=/opt/nanoclaw/.env
-Environment=PUBLIC_URL=http://172.105.158.89:3000
 Environment=NODE_ENV=production
+# Set ALLOW_INSECURE_PUBLIC_URL=true in .env only for temporary HTTP/local deployments.
 
 [Install]
 WantedBy=multi-user.target
