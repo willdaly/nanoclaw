@@ -15,6 +15,7 @@
     "prepare": "husky",
     "setup": "tsx setup/index.ts",
     "auth": "tsx src/whatsapp-auth.ts",
+    "register:nanda": "tsx scripts/register-with-nanda.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

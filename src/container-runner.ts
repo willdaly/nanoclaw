@@ -14,6 +14,15 @@ import {
   DATA_DIR,
   GROUPS_DIR,
   IDLE_TIMEOUT,
+  NANDA_AGENT_CAPABILITIES,
+  NANDA_AGENT_DESCRIPTION,
+  NANDA_AGENT_HANDLE,
+  NANDA_AGENT_ID,
+  NANDA_AGENT_NAME,
+  NANDA_AGENT_TAGS,
+  NANDA_AGENT_VERSION,
+  NANDA_REGISTRY_URL,
+  PUBLIC_URL,
   TIMEZONE,
 } from './config.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
@@ -245,6 +254,23 @@ function buildContainerArgs(
     args.push('-e', 'ANTHROPIC_API_KEY=placeholder');
   } else {
     args.push('-e', 'CLAUDE_CODE_OAUTH_TOKEN=placeholder');
+  }
+
+  const nonSecretEnv: Record<string, string> = {
+    PUBLIC_URL,
+    NANDA_REGISTRY_URL,
+    NANDA_AGENT_ID,
+    NANDA_AGENT_HANDLE,
+    NANDA_AGENT_NAME,
+    NANDA_AGENT_DESCRIPTION,
+    NANDA_AGENT_VERSION,
+    NANDA_AGENT_CAPABILITIES,
+    NANDA_AGENT_TAGS,
+  };
+
+  for (const [key, value] of Object.entries(nonSecretEnv)) {
+    if (!value) continue;
+    args.push('-e', `${key}=${value}`);
   }
 
   // Runtime-specific args for host gateway resolution

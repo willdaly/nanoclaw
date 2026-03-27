@@ -4,7 +4,18 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
 
-import { GROUPS_DIR } from '../config.js';
+import {
+  ALLOW_INSECURE_PUBLIC_URL,
+  GROUPS_DIR,
+  NANDA_AGENT_CAPABILITIES,
+  NANDA_AGENT_DESCRIPTION,
+  NANDA_AGENT_HANDLE,
+  NANDA_AGENT_ID,
+  NANDA_AGENT_NAME,
+  NANDA_AGENT_VERSION,
+  PUBLIC_URL,
+  WEB_PORT,
+} from '../config.js';
 import { setRegisteredGroup } from '../db.js';
 import { logger } from '../logger.js';
 import { Channel } from '../types.js';
@@ -13,8 +24,6 @@ import { registerChannel, ChannelOpts } from './registry.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const WEB_JID = 'web:cake-demo';
-const WEB_PORT = parseInt(process.env.WEB_PORT || '3000', 10);
-const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${WEB_PORT}`;
 const GROUP_FOLDER = 'web_cake-demo';
 const SOURCE_CLAUDE_MD = path.join(
   GROUPS_DIR,
@@ -22,23 +31,76 @@ const SOURCE_CLAUDE_MD = path.join(
   'CLAUDE.md',
 );
 
+const DEFAULT_CAPABILITIES = [
+  'urn:nanda:cap:rag-search',
+  'urn:nanda:cap:order-placement',
+  'urn:nanda:cap:a2a-orchestration',
+  'urn:nanda:cap:nanda-registration',
+];
+
+function parseCsv(input: string): string[] {
+  return input
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getCapabilities(): string[] {
+  const fromEnv = parseCsv(NANDA_AGENT_CAPABILITIES);
+  return fromEnv.length > 0 ? fromEnv : DEFAULT_CAPABILITIES;
+}
+
+function logPublicUrlWarnings(): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(PUBLIC_URL);
+  } catch {
+    logger.warn({ publicUrl: PUBLIC_URL }, 'PUBLIC_URL is not a valid URL');
+    return;
+  }
+
+  const isLocalHost =
+    parsed.hostname === 'localhost' ||
+    parsed.hostname === '127.0.0.1' ||
+    parsed.hostname === '0.0.0.0';
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  if (parsed.protocol !== 'https:') {
+    if (isProduction && !ALLOW_INSECURE_PUBLIC_URL) {
+      throw new Error(
+        `PUBLIC_URL must be HTTPS in production (current: ${PUBLIC_URL}). Set ALLOW_INSECURE_PUBLIC_URL=true only for temporary exceptions.`,
+      );
+    }
+    logger.warn(
+      { publicUrl: PUBLIC_URL },
+      'PUBLIC_URL is not HTTPS; agent discovery traffic may be insecure',
+    );
+  }
+
+  if (isLocalHost) {
+    if (isProduction && !ALLOW_INSECURE_PUBLIC_URL) {
+      throw new Error(
+        `PUBLIC_URL points to a local interface in production (current: ${PUBLIC_URL}). Set ALLOW_INSECURE_PUBLIC_URL=true only for temporary exceptions.`,
+      );
+    }
+    logger.warn(
+      { publicUrl: PUBLIC_URL },
+      'PUBLIC_URL points to a local interface and is not publicly discoverable',
+    );
+  }
+}
+
 function buildAgentFacts() {
   return {
     '@context': 'https://spec.projectnanda.org/agentfacts/v1.2.jsonld',
-    id: `uuid:cake-ordering-swarm-v1`,
-    handle: '@willdaly/cake-ordering-swarm',
-    name: 'Cake Ordering Swarm',
-    description:
-      'A Society of Agents for the NANDA Sandbox that handles end-to-end cake ordering. Cambridge, MA artisan bakery.',
-    version: '1.0.0',
+    id: `uuid:${NANDA_AGENT_ID}`,
+    handle: NANDA_AGENT_HANDLE,
+    name: NANDA_AGENT_NAME,
+    description: NANDA_AGENT_DESCRIPTION,
+    version: NANDA_AGENT_VERSION,
     url: PUBLIC_URL,
     endpoint: PUBLIC_URL,
-    capabilities: [
-      'urn:nanda:cap:rag-search',
-      'urn:nanda:cap:order-placement',
-      'urn:nanda:cap:a2a-orchestration',
-      'urn:nanda:cap:nanda-registration',
-    ],
+    capabilities: getCapabilities(),
     skills: [
       {
         id: 'cake-menu-rag',
@@ -92,6 +154,7 @@ export class WebChannel implements Channel {
 
   async connect(): Promise<void> {
     this.ensureGroup();
+    logPublicUrlWarnings();
 
     const htmlPath = path.join(__dirname, 'web-ui.html');
     const htmlContent = fs.readFileSync(htmlPath, 'utf-8');

@@ -108,7 +108,26 @@ echo "✓ Deployed. Checking status..."
 sleep 3
 systemctl status nanoclaw --no-pager -l | tail -20
 
+# ── Optional NANDA registration step (dry-run then real) ─────────────
+if [ "${NANDA_AUTO_REGISTER:-true}" = "true" ]; then
+  echo ""
+  echo "Running NANDA registration workflow..."
+  NANDA_FLAGS=()
+  if grep -Eq '^PUBLIC_URL=http://' "$APP_DIR/.env"; then
+    NANDA_FLAGS+=("--allow-http")
+    echo "PUBLIC_URL is HTTP; using --allow-http for registration"
+  fi
+
+  npm run register:nanda -- --dry-run "${NANDA_FLAGS[@]}"
+  npm run register:nanda -- "${NANDA_FLAGS[@]}"
+fi
+
+PUBLIC_URL_VALUE="$(grep -E '^PUBLIC_URL=' "$APP_DIR/.env" | tail -1 | cut -d= -f2-)"
+if [ -z "$PUBLIC_URL_VALUE" ]; then
+  PUBLIC_URL_VALUE="http://172.105.158.89:3000"
+fi
+
 echo ""
-echo "Web UI:       http://172.105.158.89:3000"
-echo "Agent facts:  http://172.105.158.89:3000/.well-known/agent.json"
+echo "Web UI:       $PUBLIC_URL_VALUE"
+echo "Agent facts:  ${PUBLIC_URL_VALUE%/}/.well-known/agent.json"
 ENDSSH

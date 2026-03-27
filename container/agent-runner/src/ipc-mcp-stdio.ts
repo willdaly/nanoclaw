@@ -651,6 +651,23 @@ Returns a unique order ID, itemised receipt, and estimated delivery window.`,
 // ───────────────────────────────────────────────────────────────────────────
 
 const PUBLIC_URL = process.env.PUBLIC_URL || 'http://localhost:3000';
+const NANDA_AGENT_ID = process.env.NANDA_AGENT_ID || 'nanoclaw-main';
+const NANDA_AGENT_NAME = process.env.NANDA_AGENT_NAME || 'NanoClaw Agent';
+const NANDA_AGENT_DESCRIPTION =
+  process.env.NANDA_AGENT_DESCRIPTION ||
+  'A container-isolated Claude assistant orchestrator with multi-channel routing.';
+const NANDA_AGENT_TAGS = (process.env.NANDA_AGENT_TAGS || 'nanoclaw')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+
+function normalizeRegistryBase(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, '');
+  if (trimmed.endsWith('/register')) {
+    return trimmed.slice(0, -'/register'.length);
+  }
+  return trimmed;
+}
 
 const SWARM_AGENT_CARD = {
   name: 'Cake Ordering Swarm',
@@ -747,23 +764,26 @@ Call this when asked to "describe the swarm", "show agent metadata", or "prepare
   },
 );
 
-// Primary NANDA registry: MBTA Winter 2026 team's public registry (same class, live endpoint)
-// Fallback: official NANDA index (requires JWT — set NANDA_JWT env var)
-const MBTA_REGISTRY = 'http://97.107.132.213:6900/register';
-const NANDA_INDEX = process.env.NANDA_REGISTRY_URL || MBTA_REGISTRY;
+const DEFAULT_NANDA_REGISTRY = 'http://registry.chat39.com:6900';
+const NANDA_INDEX = process.env.NANDA_REGISTRY_URL || DEFAULT_NANDA_REGISTRY;
 
 server.tool(
   'diplomat_register_to_nanda',
   `[Diplomat Agent] Register the Cake Ordering Swarm with the NANDA Index and Registry. Posts the Agent Fact Card to the live NANDA registry endpoint and returns the real registration response.
 
-Primary registry: MBTA Winter 2026 public NANDA registry (same class project, open endpoint).
+Primary registry: NANDA Index registry endpoint.
 Set NANDA_REGISTRY_URL env var to override with a different registry.`,
   {
     override_url: z.string().optional().describe('Optional: override the NANDA registry endpoint URL'),
     notes: z.string().optional().describe('Optional notes to include in the registration payload'),
   },
   async (args) => {
-    const registryEndpoint = args.override_url || NANDA_INDEX;
+    const registryBase = normalizeRegistryBase(args.override_url || NANDA_INDEX);
+    const registerEndpoint = `${registryBase}/register`;
+    const statusEndpoints = [
+      `${registryBase}/agents/${encodeURIComponent(NANDA_AGENT_ID)}/status`,
+      `${registryBase}/update/${encodeURIComponent(NANDA_AGENT_ID)}`,
+    ];
 
     const factCard = {
       ...SWARM_AGENT_CARD,
@@ -774,20 +794,28 @@ Set NANDA_REGISTRY_URL env var to override with a different registry.`,
 
     // Build the registration payload matching the MBTA registry schema
     const payload = {
-      agent_id: 'cake-ordering-swarm',
-      name: factCard.name,
-      description: factCard.description,
+      agent_id: NANDA_AGENT_ID,
+      name: NANDA_AGENT_NAME,
+      description: NANDA_AGENT_DESCRIPTION,
       capabilities: factCard.skills.map((s: { id: string }) => s.id),
       agent_url: PUBLIC_URL,
-      facts_url: `${PUBLIC_URL}/.well-known/agent.json`,
+      agent_facts_url: `${PUBLIC_URL}/.well-known/agent.json`,
       status: 'alive',
       protocol: 'a2a',
       version: factCard.version,
     };
 
-    let registrationResult: Record<string, unknown>;
+    const statusPayload = {
+      alive: true,
+      capabilities: payload.capabilities,
+      tags: NANDA_AGENT_TAGS,
+    };
+
+    let registerResult: Record<string, unknown>;
+    let statusResult: Record<string, unknown>;
+    let statusEndpointUsed: string | null = null;
     try {
-      const response = await fetch(registryEndpoint, {
+      const response = await fetch(registerEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -796,16 +824,63 @@ Set NANDA_REGISTRY_URL env var to override with a different registry.`,
       const body = await response.text();
       let parsed: unknown;
       try { parsed = JSON.parse(body); } catch { parsed = body; }
-      registrationResult = {
+      registerResult = {
         status: response.status,
         statusText: response.statusText,
         body: parsed,
       };
+
+      let lastStatusResult: Record<string, unknown> | null = null;
+      for (const endpoint of statusEndpoints) {
+        const statusResponse = await fetch(endpoint, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(statusPayload),
+          signal: AbortSignal.timeout(10000),
+        });
+        const statusBody = await statusResponse.text();
+        let statusParsed: unknown;
+        try { statusParsed = JSON.parse(statusBody); } catch { statusParsed = statusBody; }
+
+        if (statusResponse.ok) {
+          statusEndpointUsed = endpoint;
+          statusResult = {
+            status: statusResponse.status,
+            statusText: statusResponse.statusText,
+            body: statusParsed,
+          };
+          lastStatusResult = null;
+          break;
+        }
+
+        lastStatusResult = {
+          status: statusResponse.status,
+          statusText: statusResponse.statusText,
+          body: statusParsed,
+          endpoint,
+        };
+
+        if (statusResponse.status !== 404) {
+          break;
+        }
+      }
+
+      if (!statusEndpointUsed) {
+        statusResult =
+          lastStatusResult || {
+            status: 0,
+            statusText: 'Status update failed',
+          };
+      }
     } catch (err) {
-      registrationResult = {
+      registerResult = {
         status: 0,
         statusText: 'Network error',
         error: err instanceof Error ? err.message : String(err),
+      };
+      statusResult = {
+        status: 0,
+        statusText: 'Not attempted',
       };
     }
 
@@ -813,11 +888,22 @@ Set NANDA_REGISTRY_URL env var to override with a different registry.`,
       agent: 'Diplomat',
       action: 'NANDA Registry Registration',
       request: {
-        method: 'POST',
-        endpoint: registryEndpoint,
-        payload,
+        register: {
+          method: 'POST',
+          endpoint: registerEndpoint,
+          payload,
+        },
+        updateStatus: {
+          method: 'PUT',
+          endpointCandidates: statusEndpoints,
+          endpointUsed: statusEndpointUsed,
+          payload: statusPayload,
+        },
       },
-      response: registrationResult,
+      response: {
+        register: registerResult,
+        updateStatus: statusResult,
+      },
       factsUrl: `${PUBLIC_URL}/.well-known/agent.json`,
       submittedFactCard: factCard,
     };

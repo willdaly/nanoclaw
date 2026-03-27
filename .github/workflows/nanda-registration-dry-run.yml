@@ -1,0 +1,44 @@
+name: NANDA Registration Dry Run
+
+on:
+  pull_request:
+    paths:
+      - scripts/register-with-nanda.ts
+      - src/channels/web.ts
+      - src/config.ts
+      - src/container-runner.ts
+      - container/agent-runner/src/ipc-mcp-stdio.ts
+      - .env.example
+      - README.md
+      - deploy.sh
+      - nanoclaw.service
+      - package.json
+  workflow_dispatch:
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    env:
+      PUBLIC_URL: https://example.com
+      NANDA_REGISTRY_URL: http://registry.chat39.com:6900
+      NANDA_AGENT_ID: nanoclaw-ci-dryrun
+      NANDA_AGENT_CAPABILITIES: urn:nanda:cap:a2a-orchestration,urn:nanda:cap:nanda-registration
+      NANDA_AGENT_TAGS: ci,dry-run
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: NANDA registration dry run
+        run: npm run register:nanda -- --dry-run --allow-http --facts-url https://example.com/.well-known/agent.json --capabilities "$NANDA_AGENT_CAPABILITIES" --tags "$NANDA_AGENT_TAGS"
