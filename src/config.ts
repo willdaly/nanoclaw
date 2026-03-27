@@ -32,7 +32,9 @@ export const WEB_PORT = parseInt(
   10,
 );
 export const PUBLIC_URL =
-  process.env.PUBLIC_URL || envConfig.PUBLIC_URL || `http://localhost:${WEB_PORT}`;
+  process.env.PUBLIC_URL ||
+  envConfig.PUBLIC_URL ||
+  `http://localhost:${WEB_PORT}`;
 export const NANDA_REGISTRY_URL =
   process.env.NANDA_REGISTRY_URL ||
   envConfig.NANDA_REGISTRY_URL ||
@@ -44,7 +46,9 @@ export const NANDA_AGENT_HANDLE =
   envConfig.NANDA_AGENT_HANDLE ||
   '@nanoclaw/main';
 export const NANDA_AGENT_NAME =
-  process.env.NANDA_AGENT_NAME || envConfig.NANDA_AGENT_NAME || 'NanoClaw Agent';
+  process.env.NANDA_AGENT_NAME ||
+  envConfig.NANDA_AGENT_NAME ||
+  'NanoClaw Agent';
 export const NANDA_AGENT_DESCRIPTION =
   process.env.NANDA_AGENT_DESCRIPTION ||
   envConfig.NANDA_AGENT_DESCRIPTION ||
@@ -52,7 +56,9 @@ export const NANDA_AGENT_DESCRIPTION =
 export const NANDA_AGENT_VERSION =
   process.env.NANDA_AGENT_VERSION || envConfig.NANDA_AGENT_VERSION || '1.0.0';
 export const NANDA_AGENT_CAPABILITIES =
-  process.env.NANDA_AGENT_CAPABILITIES || envConfig.NANDA_AGENT_CAPABILITIES || '';
+  process.env.NANDA_AGENT_CAPABILITIES ||
+  envConfig.NANDA_AGENT_CAPABILITIES ||
+  '';
 export const NANDA_AGENT_TAGS =
   process.env.NANDA_AGENT_TAGS || envConfig.NANDA_AGENT_TAGS || '';
 export const ALLOW_INSECURE_PUBLIC_URL =
